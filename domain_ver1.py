@@ -1,100 +1,100 @@
-import whois
 import requests
-from urllib.parse import urlparse
+import whois
 import datetime
+from urllib.parse import urlparse
+from bs4 import BeautifulSoup
 
-# 특정 웹 페이지가 구글 검색 엔진의 색인에 포함되어 있는지 여부
+# Google Safe Browsing API 키
+API_KEY = 'AIzaSyD2OaMfUyIk8Zq0BOJs_hCoM_WRZEInx1g'
+API_URL = f'https://safebrowsing.googleapis.com/v4/threatMatches:find?key={API_KEY}'
+
+# 위협 유형 리스트
+THREAT_TYPES = [
+    "MALWARE",
+    "SOCIAL_ENGINEERING",
+    "UNWANTED_SOFTWARE",
+    "POTENTIALLY_HARMFUL_APPLICATION"
+]
+
+# Helper Functions
 def google_index(url):
     try:
         response = requests.get(f"https://www.google.com/search?q=site:{urlparse(url).netloc}")
         return 1 if 'No results' not in response.text else 0
     except requests.RequestException:
-        return -1  # 의심
-    except Exception as e:
-        return -1 
+        return -1
 
-# 도메인 이름에 "www"가 포함된 경우
-def having_sub_domain(url):
-    return 1 if 'www.' in urlparse(url).netloc else 0
-
-# 도메인이 처음 등록된 날짜에서 현재까지의 시간 (도메인 수명)
-def age_of_domain(url):
+def domain_age(url):
     try:
         domain = urlparse(url).netloc
         domain_info = whois.whois(domain)
         creation_date = domain_info.creation_date
-
         if isinstance(creation_date, list):
             creation_date = creation_date[0]
-
         if creation_date is None:
             return -1
-        
         age_days = (datetime.datetime.now() - creation_date).days
-
-        return 0 if age_days >= 180 else 1  # 180일(6개월)을 기준으로 설정
+        if age_days >= 3031:
+            return 0
+        else:
+            return 1
     except Exception as e:
+        print(f"An error occurred: {e}")
         return -1
 
-# Whois 정보를 이용하여 DNS 기록의 존재 여부를 확인
 def dns_record(url):
     try:
         domain = urlparse(url).netloc
         domain_info = whois.whois(domain)
-        
         if domain_info is None or domain_info.status is None:
-            return 1  # Whois 정보가 비어 있거나 DNS 기록이 없으므로 피싱 사이트
-        
-        return 0  # 정상 사이트
+            return 1
+        return 0
     except Exception as e:
+        print(f"Whois 조회 중 오류 발생: {e}")
         return -1
 
-# 도메인 등록 기간
-def domain_registration_length(url):
+def domain_registration_period(url):
     try:
         domain = urlparse(url).netloc
         domain_info = whois.whois(domain)
-        creation_date = domain_info.creation_date
-
-        if isinstance(creation_date, list):
-            creation_date = creation_date[0]
-
-        if creation_date is None:
+        if domain_info.creation_date is None:
             return -1
-
-        age_days = (datetime.datetime.now() - creation_date).days
-        return age_days
+        if isinstance(domain_info.creation_date, list):
+            creation_date = domain_info.creation_date[0]
+        else:
+            creation_date = domain_info.creation_date
+        if isinstance(creation_date, datetime.datetime):
+            age_days = (datetime.datetime.now() - creation_date).days
+        else:
+            return -1
+        if age_days < 180:
+            return 1
+        else:
+            return 0
     except Exception as e:
+        print(f"Whois 조회 중 오류 발생: {e}")
         return -1
 
-# SSL 인증서의 유효성 여부
 def ssl_certificate_status(url):
     try:
         response = requests.get(url, timeout=5)
         return 0 if 'https' in response.url else 1
     except requests.RequestException:
-        return 1  # 피싱
-    except Exception as e:
-        return -1
+        return 1
 
-# Google Safe Browsing을 통해 웹사이트의 안전성 확인
 def safe_browsing(url):
-    API_KEY = 'AIzaSyD2OaMfUyIk8Zq0BOJs_hCoM_WRZEInx1g'
-    API_URL = f'https://safebrowsing.googleapis.com/v4/threatMatches:find?key={API_KEY}'
-    
     body = {
         'client': {
             'clientId': 'yourcompany',
             'clientVersion': '1.0.0'
         },
         'threatInfo': {
-            'threatTypes': ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"],
+            'threatTypes': THREAT_TYPES,
             'platformTypes': ['ANY_PLATFORM'],
             'threatEntryTypes': ['URL'],
             'threatEntries': [{'url': url}]
         }
     }
-    
     try:
         response = requests.post(API_URL, json=body)
         if response.status_code == 200:
@@ -104,51 +104,75 @@ def safe_browsing(url):
             return -1
     except requests.RequestException:
         return -1
-    except Exception as e:
-        return -1
 
-# 웹사이트 트래픽 점수 (외부 API 필요)
+def having_sub_domain(url):
+    return 1 if len(urlparse(url).path.split('.')) > 2 else 0
+
+def https_token(url):
+    return 1 if 'https' in urlparse(url).netloc else 0
+
 def web_traffic(url):
-    # 외부 API 사용이 필요합니다. 임의의 값을 반환하도록 구현
-    return -1  # 의심
+    # Note: Web traffic data typically requires specialized APIs or services.
+    # This is a placeholder implementation.
+    return -1  # Placeholder for actual traffic data lookup
 
-# 웹 페이지로 향하는 링크 수 (외부 API 필요)
+def page_rank(url):
+    # Note: Google PageRank API is not publicly available.
+    # This is a placeholder implementation.
+    return -1  # Placeholder for actual PageRank lookup
+
 def links_pointing_to_page(url):
-    # 외부 API 사용이 필요합니다. 임의의 값을 반환하도록 구현
-    return -1  # 의심
+    # Placeholder implementation, actual implementation would require crawling the web.
+    return -1  # Placeholder for actual link count lookup
 
-# 통계 보고 (외부 API 필요)
 def statistical_report(url):
-    # 외부 API 사용이 필요합니다. 임의의 값을 반환하도록 구현
-    return -1  # 의심
+    # Placeholder for checking against PhishTank or StopBadware databases.
+    return -1  # Placeholder for actual statistical report lookup
 
-# 데이터셋에 새로운 피처를 추가하는 함수
-def extract_features(url):
-    features = {
-        "having_Sub_Domain": having_sub_domain(url),
-        "SSLfinal_State": ssl_certificate_status(url),
-        "Domain_registeration_length": domain_registration_length(url),
-        "age_of_domain": age_of_domain(url),
-        "DNSRecord": dns_record(url),
-        "web_traffic": web_traffic(url),
-        "Page_Rank": -1,  # page_rank(url) 가 필요하나, 외부 API 필요
-        "Google_Index": google_index(url),
-        "Links_pointing_to_page": links_pointing_to_page(url),
-        "Statistical_report": statistical_report(url)
-    }
-    return features
+def main():
+    test_urls = [
+        "http://www.crestonwood.com/router.php",
+        "http://shadetreetechnology.com/V4/validation/a111aedc8ae390eabcfa130e041a10a4",
+        "https://support-appleld.com.secureupdate.duilawyeryork.com/ap/89e6a3b4b063b8d/?cmd=_update&dispatch=89e6a3b4b063b8d1b&locale=_",
+        "http://rgipt.ac.in",
+        "http://www.iracing.com/tracks/gateway-motorsports-park/",
+        "http://appleid.apple.com-app.es/",
+        "http://www.mutuo.it",
+        "http://www.shadetreetechnology.com/V4/validation/ba4b8bddd7958ecb8772c836c2969531",
+        "http://vamoaestudiarmedicina.blogspot.com/",
+        "https://parade.com/425836/joshwigler/the-amazing-race-host-phil-keoghan-previews-the-season-27-premiere/",
+        "https://www.astrologyonline.eu/Astro_MemoNew/Profilo.asp",
+        "https://www.lifewire.com/tcp-port-21-818146",
+        "https://technofizi.net/top-best-mp3-downloader-app-for-android-free-music-download/",
+        "http://html.house/l7ceeid6.html",
+        "https://www.missfiga.com/",
+        "http://wave.progressfilm.co.uk/time3/?logon=myposte",
+        "https://www.chiefarchitect.com/",
+        "http://beta.kenaidanceta.com/postamok/d39a2/source",
+        "http://www.ktplasmachinery.com/cs/",
+        "http://www.2345daohang.com/",
+        "http://www.game.co.uk/en/games/nintendo-switch/nintendo-switch/",
+        "https://blog.hubspot.com/marketing/email-open-click-rate-benchmark",
+        "http://batvrms.net/deliver/D2017HL/u.php",
+        "http://sophie-world.com/games/port-and-starboard",
+        "http://support-appleld.com.secureupdate.duilawyeryork.com/ap/bb14d7ff1fcbf29?cmd=_update&dispatch=bb14d7ff1fcbf29bb&locale=_"
+    ]
 
-# 예시 URL 리스트
-urls = ["http://example.com", "http://phishingsite.com"]
+    for url in test_urls:
+        print(f"URL: {url}")
+        print(f"Google Index: {google_index(url)}")
+        print(f"Domain Age: {domain_age(url)}")
+        print(f"DNS Record: {dns_record(url)}")
+        print(f"Domain Registration Period: {domain_registration_period(url)}")
+        print(f"SSL Certificate Status: {ssl_certificate_status(url)}")
+        print(f"Safe Browsing: {safe_browsing(url)}")
+        print(f"Having Sub Domain: {having_sub_domain(url)}")
+        print(f"HTTPS Token: {https_token(url)}")
+        print(f"Web Traffic: {web_traffic(url)}")
+        print(f"Page Rank: {page_rank(url)}")
+        print(f"Links Pointing to Page: {links_pointing_to_page(url)}")
+        print(f"Statistical Report: {statistical_report(url)}")
+        print("-" * 50)
 
-# 각 URL에 대해 피처를 추출하여 데이터프레임 생성
-import pandas as pd
-
-data = []
-for url in urls:
-    features = extract_features(url)
-    features['URL'] = url
-    data.append(features)
-
-df = pd.DataFrame(data)
-print(df)
+if __name__ == "__main__":
+    main()
